@@ -203,15 +203,27 @@ if st.sidebar.button("Regenerate background"):
 if st.sidebar.button("Regenerate source"):
     st.session_state.seed_src += 1
 
+if "seed_ext" not in st.session_state:
+    st.session_state.seed_ext = 44
+
+if st.sidebar.button("Regenerate extended background"):
+    st.session_state.seed_ext += 1
+    
 if st.sidebar.button("Regenerate all"):
     st.session_state.seed_bgd += 1
     st.session_state.seed_src += 1
+    st.session_state.seed_ext += 1
 
 st.sidebar.write(f"Background seed: {st.session_state.seed_bgd}")
 st.sidebar.write(f"Source seed: {st.session_state.seed_src}")
 
 rng_bgd = np.random.default_rng(st.session_state.seed_bgd)
 rng_src = np.random.default_rng(st.session_state.seed_src)
+rng_ext = np.random.default_rng(st.session_state.seed_ext)
+
+st.sidebar.write(
+    f"Extended background seed: {st.session_state.seed_ext}"
+)
 
 ######==< streamlit >==######
 st.title("Wavelet Simulation")
@@ -232,7 +244,7 @@ cs_smooth = st.sidebar.slider(
     "Smoothing color scale (counts/pixel)",
     min_value=0.0,
     max_value=10.0,
-    value=[0.0, 3.0],
+    value=[0.0, 1.5],
     step=0.01,
     format="%.3f"
 )
@@ -241,10 +253,47 @@ st.sidebar.header("image setting")
 st.sidebar.subheader("Back Ground")
 bgd = st.sidebar.number_input(
     "counts (counts/pixel)",
-    value=0.01,
+    value=0.03,
     min_value=0.0,
     step=0.01,
     format="%.3f"
+)
+sidebar_divider(2)
+st.sidebar.subheader("Extended background")
+enable_ext = st.sidebar.checkbox(
+    "Enable extended background",
+    value=False
+)
+x_ext = st.sidebar.number_input(
+    "Extended background x (pixel)",
+    value=400,
+    min_value=0,
+    max_value=pixel_num_Xtend-1,
+    step=10,
+    disabled=not enable_ext
+)
+y_ext = st.sidebar.number_input(
+    "Extended background y (pixel)",
+    value=480,
+    min_value=0,
+    max_value=pixel_num_Xtend-1,
+    step=10,
+    disabled=not enable_ext
+)
+n_ext = st.sidebar.number_input(
+    "Peak intensity (counts/pixel)",
+    value=0.3,
+    min_value=0.0,
+    step=0.01,
+    format="%.3f",
+    disabled=not enable_ext
+)
+sigma_ext = st.sidebar.number_input(
+    "Extended background sigma (pixel)",
+    value=150,
+    min_value=1,
+    step=10,
+    disabled=not enable_ext
 )
 sidebar_divider(2)
 st.sidebar.subheader("Source")
@@ -264,7 +313,7 @@ y_source = st.sidebar.number_input(
 )
 n_source = st.sidebar.number_input(
     "counts",
-    value = 0.4,
+    value = 0.7,
     min_value=0.0,
     step=0.01,
     format="%.3f"
@@ -286,6 +335,12 @@ sigma_wavelet = st.sidebar.number_input(
 )
 ################
 
+
+x = np.arange(pixel_num_Xtend)
+y = np.arange(pixel_num_Xtend)
+X, Y = np.meshgrid(x, y)
+
+
 ### poisson noise image ###
 st.divider()
 st.header(f"Back ground ({bgd} counts/pixel)")
@@ -293,12 +348,38 @@ img_bgd = rng_bgd.poisson(lam=bgd, size=img_2d.shape)
 plt_image(img_2d=img_bgd, zmin=cs_list[0], zmax=cs_list[1])
 
 
+### Extended background image ###
+if enable_ext:
+    r_squared_ext = (
+        (X - x_ext)**2 + (Y - y_ext)**2
+    )
+
+    ext_model = n_ext * np.exp(
+        -r_squared_ext / (2 * sigma_ext**2)
+    )
+
+    img_ext = rng_ext.poisson(lam=ext_model)
+    
+    st.divider()
+    show_image_with_profiles(
+        img_2d=img_ext,
+        title="Extended background",
+        x_center=pixel_num_Xtend/2,
+        y_center=pixel_num_Xtend/2,
+        half_width=pixel_num_Xtend/2,
+        mode="mean",
+        zmin=cs_list[0],
+        zmax=cs_list[1],
+        colorscale="Viridis"
+    )
+else:
+    ext_model = np.zeros_like(img_bgd, dtype=float)
+    img_ext = np.zeros_like(img_bgd)
+    
+    
 ### Source image ###
 st.divider()
 st.header("Source")
-x = np.arange(pixel_num_Xtend)
-y = np.arange(pixel_num_Xtend)
-X, Y = np.meshgrid(x, y)
 r_squared = (X - x_source)**2 + (Y - y_source)**2
 
 src_model = n_source * np.exp(
@@ -310,7 +391,7 @@ plt_image(img_2d=img_src, zmin=cs_list[0], zmax=cs_list[1])
 ### (Poisson noise) + (Source) image ###
 st.divider()
 st.header("Source + Back ground")
-img_src_bgd = img_bgd + img_src
+img_src_bgd = img_bgd + img_ext + img_src
 
 half_width_profile = int(sigma_source)
 
