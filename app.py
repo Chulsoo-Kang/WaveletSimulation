@@ -30,6 +30,7 @@ def sidebar_divider(level=1):
         unsafe_allow_html=True,
     )
     
+    
 def plt_image(img_2d, zmin=None, zmax=None, colorscale="Viridis"):
     fig = go.Figure(
         data=go.Heatmap(
@@ -52,6 +53,7 @@ def plt_image(img_2d, zmin=None, zmax=None, colorscale="Viridis"):
     )
 
     st.plotly_chart(fig)
+
 
 def make_profiles_binned(img_2d, x_center, y_center, half_width, mode="mean"):
     ny, nx = img_2d.shape
@@ -82,6 +84,7 @@ def make_profiles_binned(img_2d, x_center, y_center, half_width, mode="mean"):
 
     return x_axis, x_profile, y_axis, y_profile
 
+
 def plt_profile(axis_1d, profile_1d, title="", x_label="Pixel", y_label="Counts/pixel", vline=None):
     fig = go.Figure()
     fig.add_trace(
@@ -110,6 +113,7 @@ def plt_profile(axis_1d, profile_1d, title="", x_label="Pixel", y_label="Counts/
     )
 
     st.plotly_chart(fig, use_container_width=True)
+    
     
 def show_image_with_profiles(
     img_2d,
@@ -182,6 +186,8 @@ def show_image_with_profiles(
             y_label="Counts/pixel" if mode == "mean" else "Counts",
             vline=y_center
         )
+        
+        
         
 #############################################################
 pixel_num_Xtend = 1028
@@ -295,35 +301,93 @@ sigma_ext = st.sidebar.number_input(
     step=10,
     disabled=not enable_ext
 )
-sidebar_divider(2)
-st.sidebar.subheader("Source")
-x_source = st.sidebar.number_input(
-    "x (pixel)",
-    value = int(pixel_num_Xtend/2),
+sidebar_divider(2)##########################
+st.sidebar.subheader("Source setting")
+num_sources = st.sidebar.number_input(
+    "Number of sources",
     min_value=0,
-    max_value=pixel_num_Xtend-1, # index
-    step=int(pixel_num_Xtend/20)
+    value=1,
+    step=1
 )
-y_source = st.sidebar.number_input(
-    "y (pixel)",
-    value = int(pixel_num_Xtend/2),
-    min_value=0,
-    max_value=pixel_num_Xtend-1, # index
-    step=int(pixel_num_Xtend/20)
-)
-n_source = st.sidebar.number_input(
-    "counts",
-    value = 0.7,
-    min_value=0.0,
-    step=0.01,
-    format="%.3f"
-)
+sources = []
+
+for i in range(num_sources):
+    with st.sidebar.expander(
+        f"Source {i+1}",
+        expanded=(i == 0)
+    ):
+        default_pos = (
+            pixel_num_Xtend // 2 + i * 60
+        ) % pixel_num_Xtend
+
+        x_src = st.number_input(
+            "x (pixel)",
+            min_value=0,
+            max_value=pixel_num_Xtend-1,
+            value=default_pos,
+            step=1,
+            key=f"x_src_{i}"
+        )
+
+        y_src = st.number_input(
+            "y (pixel)",
+            min_value=0,
+            max_value=pixel_num_Xtend-1,
+            value=default_pos,
+            step=1,
+            key=f"y_src_{i}"
+        )
+
+        n_src = st.number_input(
+            "Peak intensity (counts/pixel)",
+            min_value=0.0,
+            value=0.7,
+            step=0.01,
+            format="%.3f",
+            key=f"n_src_{i}"
+        )
+
+        sigma_src = st.number_input(
+            "Sigma (pixel)",
+            min_value=1,
+            value=25,
+            step=1,
+            key=f"sigma_src_{i}"
+        )
+
+        sources.append({
+            "x": x_src,
+            "y": y_src,
+            "counts": n_src,
+            "sigma": sigma_src
+        })
 sigma_source = st.sidebar.number_input(
     "pixel (pixel scale = 1.6''/pixel)",
     value = 25,
     min_value=1,
     step=5
 )
+sidebar_divider(2)###############################
+st.sidebar.subheader("Profile setting")
+if num_sources > 0:
+
+    profile_index = st.sidebar.selectbox(
+        "Profile target",
+        options=list(range(num_sources)),
+        format_func=lambda i: f"Source {i+1}"
+    )
+
+    x_source = sources[profile_index]["x"]
+    y_source = sources[profile_index]["y"]
+    sigma_source = sources[profile_index]["sigma"]
+
+else:
+
+    x_source = pixel_num_Xtend // 2
+    y_source = pixel_num_Xtend // 2
+    sigma_source = 25
+
+
 sidebar_divider(1)#####################
 st.sidebar.header("Wavelet setting")
 sigma_wavelet = st.sidebar.number_input(
@@ -379,14 +443,26 @@ else:
     
 ### Source image ###
 st.divider()
-st.header("Source")
-r_squared = (X - x_source)**2 + (Y - y_source)**2
+st.header(f"Source image ({num_sources} sources)")
+src_model = np.zeros_like(X, dtype=float)
+for src in sources:
 
-src_model = n_source * np.exp(
-    -r_squared / (2 * sigma_source**2)
-)
+    r_squared = (
+        (X - src["x"])**2
+        + (Y - src["y"])**2
+    )
+
+    src_model += src["counts"] * np.exp(
+        -r_squared / (2 * src["sigma"]**2)
+    )
+
 img_src = rng_src.poisson(lam=src_model)
-plt_image(img_2d=img_src, zmin=cs_list[0], zmax=cs_list[1])
+
+plt_image(
+    img_2d=img_src,
+    zmin=cs_list[0],
+    zmax=cs_list[1]
+)
 
 ### (Poisson noise) + (Source) image ###
 st.divider()
